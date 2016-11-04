@@ -1,0 +1,331 @@
+<!doctype html>
+ 
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    
+    <title>Forked: pyramid</title>
+    <meta name="description" content="http://phinajs.com/" />
+    
+    <style>*, *:before, *:after {
+  box-sizing: border-box; 
+}
+html {
+  font-size: 62.5%;
+}
+body {
+  color: #444;
+  background-color: hsl(0, 0%, 96%);
+}
+h1 {
+  font-size: 1.8rem;
+}
+
+</style>
+  </head>
+  <body>
+    <script src="http://cdn.rawgit.com/phi-jp/phina.js/v0.2.0/build/phina.js"></script>
+    <script>// グローバルに展開
+phina.globalize();
+/*
+* アセット
+*/ 
+var ASSETS = {
+  // 画像
+  image: {
+    'cards':'https://raw.github.com/alkn203/pyramid/master/assets/cards.png',
+  },
+};
+/*
+ * 定数
+ */
+var CARD_WIDTH  = 80;   // カードの幅
+var CARD_HEIGHT = 120;  // カードの高さ
+var CARD_NUM    = 52;   // 使用するカード枚数 
+var INDEX_BACK  = 55;   // 裏面のフレームインデックス番号
+var TARGET_NUM  = 13;   // 取り除ける番号
+var DELAY       = 100;  // アニメーション所要時間
+var CARD_POS = [[0,-5], // ピラミッド型の配置情報
+               [-1,-4],[1,-4],
+               [-2,-3],[0,-3],[2, -3],
+               [-3,-2],[-1,-2],[1,-2],[3,-2],
+               [-4,-1],[-2,-1],[0,-1],[2,-1],[4,-1],
+               [-5,0],[-3,0],[-1,0],[1,0],[3,0],[5,0],
+               [-6,1],[-4,1],[-2,1],[0,1],[2,1],[4,1],[6,1]];
+/*
+ * メインシーン
+ */
+phina.define("MainScene", {
+  // 継承
+  superClass: 'DisplayScene',
+  // 初期化
+  init: function() {
+    // 親クラス初期化
+    this.superInit();
+    // 背景色
+    this.backgroundColor = 'green';
+    // ピラミッドカード
+    this.pyramidGroup = DisplayElement().addChildTo(this);
+    // 手札カード
+    this.handGroup = DisplayElement().addChildTo(this);
+    // めくられた手札カード
+    this.openHand = DisplayElement().addChildTo(this);
+    // 捨て札カード
+    this.dropGroup = DisplayElement().addChildTo(this);
+    // カード配置用のGrid（横方向）
+    this.gx = Grid(this.gridX.width, 15);
+    var self = this;
+    // リトライボタン
+    Button({text: 'RETRY'}).addChildTo(this)
+                           .setPosition(this.gx.center(), this.gridY.center(7))
+                           .on('pointend', function() {
+                             self.exit({
+                               nextLabel: 'main',
+                             });
+                           });
+    // 選択カードのペア
+    this.pair = [];
+    // カード配置
+    this.setCard();
+  },
+  // カード配置
+  setCard: function() {
+    // インデックス割り当て用配列を用意してシャッフル
+    var array = Array.range(CARD_NUM).shuffle();
+    var self = this;
+    // 配置情報配列を元に配置
+    CARD_POS.each(function(pos, i) {
+      // 配列からインデックスを取り出す
+      var index = array.shift();
+      // カード作成
+      var card = Card(index).addChildTo(self.pyramidGroup);
+      // 位置情報配列を元に配置
+      card.setPosition(self.gx.center(pos[0]), self.gridY.center(pos[1]));
+      // 最下段は裏返しておく
+      if (i > 20) card.flip();
+      // カードタッチ時
+      card.on('pointend', function() {
+        // カード選択処理
+        self.addPair(card);
+      });
+    });
+    // 手札配置
+    array.each(function(index) {
+      var card = Card(index).addChildTo(self.handGroup);
+      card.setPosition(self.gx.center(4), self.gridY.center(4.5));
+      // カードタッチ時
+      card.on('pointend', function() {
+        // 選択不可なら
+        if (!card.selectable) {
+          // 手札をめくる
+          self.flipHand(card);
+        }
+        else {
+          // カード選択処理
+          self.addPair(card);
+        }
+      });
+    });
+    // 手札の１番上のカードはタッチ可能に
+    this.handGroup.children.last.setInteractive(true);
+  },
+  // 待ち札をめくる処理
+  flipHand: function(card) {
+    var hand = this.openHand.children.last;
+    // 手札があるなら
+    if (hand) {
+      // 捨て札へ移動
+      hand.addChildTo(this.dropGroup)
+          .tweener.to({x: this.gx.center(-4)}, DELAY).play();
+      // 捨て札の１番上だけ選択可能にする
+      this.enableTopDrop();
+    }
+    // 手札からめくられた手札へ移動
+    card.addChildTo(this.openHand).moveflip(this.gx.span(2));
+    // 手札の１番上のカードはタッチ可能に
+    if (this.handGroup.children.length > 0) {
+      this.handGroup.children.last.setInteractive(true);
+    }
+  },
+  // 捨て札の１番上だけを選択可能にする
+  enableTopDrop: function() {
+    this.dropGroup.children.each(function(card) {
+      card.interactive = false;
+      card.selectable = false;
+    });
+
+    var len = this.dropGroup.children.length;
+    var last = this.dropGroup.children.last;
+
+    if (last.disapper && len > 1) {
+      var beforelast = this.dropGroup.children[len - 2];
+      beforelast.setInteractive(true);
+      beforelast.selectable = true;
+    }
+    else {
+      last.setInteractive(true);
+      last.selectable = true;
+    }
+  },
+  // カード選択
+  addPair: function(card) {
+    // 選択不可なら何もしない
+    if (!card.selectable) return;
+    // 13なら無条件で消去
+    if (card.num === TARGET_NUM) {
+      card.disable();
+      this.flipNextCards();
+      return;
+    } 
+    // １枚目
+    if (this.pair.length === 0) {
+      this.pair.push(card);
+      // 枠追加
+      Frame().addChildTo(card);
+    }
+    else {
+      // ２枚目
+      if (this.pair.length === 1) {
+        this.pair.push(card);
+        // ペアの数字をチェック
+        this.checkPair();
+      }
+    }
+  },
+  // ペアのチェック
+  checkPair: function() {
+    var p1 = this.pair[0];
+    var p2 = this.pair[1];
+    var y = this.gridY.center(4.5);
+    // 手札と捨て札のセットは不可
+    if (p1.y === y && p2.y === y) {
+      p1.children.first.remove();
+      this.pair.clear();
+      return;
+    }
+    // 数字の合計が13なら取り除く
+    if (p1.num + p2.num === TARGET_NUM) {
+      p1.disable();
+      p2.disable();
+      // 裏返せるカードを裏返す
+      this.flipNextCards();
+      this.enableTopDrop();
+    }
+    else {
+      // 枠削除
+      p1.children.first.remove();
+    }
+    // ペア情報クリア
+    this.pair.clear();
+  },
+  // 裏返せるカードを裏返す
+  flipNextCards: function() {
+    var pyramids = this.pyramidGroup.children;
+    var result = false;
+    // カードを総当たりチェック
+    pyramids.each(function(card) {
+      // 選択不可（裏面）であれば
+      if (!card.selectable) {
+        var free = true;
+        
+        pyramids.each(function(target) {
+          // 消去対象ではなく
+          if (!target.disapper) {
+            // 上に載っているカードがある場合
+            if (card.hitTestElement(target) && card.y < target.y) {
+              free = false;
+            }
+          }
+        });
+        // 上に載っているカードがなければ裏返す
+        if (free) card.flip();
+      }
+    });
+  },
+});
+/*
+ * カードクラス
+ */
+phina.define('Card', {
+  // Spriteクラスを継承
+  superClass: 'Sprite',
+  // コンストラクタ
+  init: function(index) {
+    // 親クラス初期化
+    this.superInit('cards', CARD_WIDTH, CARD_HEIGHT);
+    // インデックス
+    this.index = index;
+    // フレームインデックス設定(最初は裏面)
+    this.frameIndex = INDEX_BACK;
+    // カード数字算出
+    this.num = index === INDEX_BACK ? 0 : this.index % 13 + 1;
+    // 選択対象かどうか
+    this.selectable = false;
+    // 消去中
+    this.disapper = false;
+  },
+  // カード返し処理
+  flip : function() {
+    // アニメーション：絵柄のフレームにして選択可能にする
+    this.tweener.to({scaleX: 0.1}, DELAY)
+                .set({frameIndex: this.index})
+                .to({scaleX: 1.0}, DELAY)
+                .set({interactive: true, selectable: true})
+                .play();
+  },
+  // 手札カード返し処理
+  moveflip : function(span) {
+    // アニメーション：めくって移動
+    this.tweener.by({x: -span}, DELAY)
+                .to({scaleX: 0.1}, DELAY)
+                .set({frameIndex: this.index, selectable: true})
+                .to({scaleX: 1.0}, DELAY)
+                .play();
+  },
+  // カード消去処理
+  disable : function() {
+    var self = this;
+    // 消去フラグ
+    this.disapper = true;
+    // アニメーション    
+    this.tweener.to({scaleX: 0, scaleY: 0}, DELAY)
+                .call(function() {
+                  self.remove();    
+                })
+                .play();
+  },
+});
+/*
+ * 枠クラス
+ */
+phina.define('Frame', {
+  // RectangleShapeクラスを継承
+  superClass: 'RectangleShape',
+  // コンストラクタ
+  init: function() {
+    // 親クラス初期化
+    this.superInit({
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      fill: null,
+      stroke: 'blue',
+    });
+  },
+});
+/*
+ * メイン処理
+ */
+phina.main(function() {
+  // アプリケーションを生成
+  var app = GameApp({
+    assets: ASSETS, // アセット読み込み
+    startLabel: 'main', // MainScene から開始
+  });
+  // 実行
+  app.run();
+});</script>
+  </body>
+</html>
+
