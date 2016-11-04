@@ -151,22 +151,27 @@ phina.define("MainScene", {
   },
   // 捨て札の１番上だけを選択可能にする
   enableTopDrop: function() {
-    this.dropGroup.children.each(function(card) {
+    var drops = this.dropGroup.children;
+    // 一旦全て選択不可に
+    drops.each(function(card) {
       card.interactive = false;
       card.selectable = false;
     });
 
-    var len = this.dropGroup.children.length;
-    var last = this.dropGroup.children.last;
+    var len = drops.length;
+    var last = drops.last;
 
-    if (last.disapper && len > 1) {
-      var beforelast = this.dropGroup.children[len - 2];
-      beforelast.setInteractive(true);
-      beforelast.selectable = true;
-    }
-    else {
-      last.setInteractive(true);
-      last.selectable = true;
+    if (last) {
+      // 一番上が消去中の時はその１つ前
+      if (last.disapper && len > 1) {
+        var before = drops[len - 2];
+        before.setInteractive(true);
+        before.selectable = true;
+      }
+      else {
+        last.setInteractive(true);
+        last.selectable = true;
+      }
     }
   },
   // カード選択
